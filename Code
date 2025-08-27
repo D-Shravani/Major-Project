@@ -1,0 +1,94 @@
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+
+# ================= Step 1: Upload and Load Images =================
+orig_path = "Screenshot 2025-08-05 200741.png" # Original
+tamp_path = "Screenshot 2025-08-05 200850.png" # Tampered
+original_img = cv2.imread(orig_path)
+tampered_img = cv2.imread(tamp_path)
+if original_img is None or tampered_img is None:
+    raise ValueError("❌ Could not load one or both images. Check file paths.")
+# Convert BGR → RGB for display
+original_img = cv2.cvtColor(original_img, cv2.COLOR_BGR2RGB)
+tampered_img = cv2.cvtColor(tampered_img, cv2.COLOR_BGR2RGB)
+print("✅ Step 1: Images loaded")
+# Show the uploaded images
+plt.figure(figsize=(10,5))
+plt.subplot(1,2,1); plt.imshow(original_img); plt.title("Original Image"); plt.axis("off")
+plt.subplot(1,2,2); plt.imshow(tampered_img); plt.title("Tampered Image"); plt.axis("off")
+plt.show()
+
+# ================= Step 2: Preprocessing =================
+def preprocess_image(img):
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    return gray, blur
+orig_gray, orig_blur = preprocess_image(original_img)
+tamp_gray, tamp_blur = preprocess_image(tampered_img)
+print("✅ Step 2: Preprocessing done")
+plt.figure(figsize=(10,5))
+plt.subplot(2,2,1); plt.imshow(orig_gray, cmap="gray"); plt.title("Original Gray"); plt.axis("off")
+plt.subplot(2,2,2); plt.imshow(orig_blur, cmap="gray"); plt.title("Original Blur"); plt.axis("off")
+plt.subplot(2,2,3); plt.imshow(tamp_gray, cmap="gray"); plt.title("Tampered Gray"); plt.axis("off")
+plt.subplot(2,2,4); plt.imshow(tamp_blur, cmap="gray"); plt.title("Tampered Blur"); plt.axis("off")
+plt.show()
+
+# ================= Step 3: Edge Detection =================
+def dummy_unet_block3(img):
+    edges = cv2.Canny(img, 100, 200)
+    return edges
+orig_edges = dummy_unet_block3(orig_blur)
+tamp_edges = dummy_unet_block3(tamp_blur)
+print("✅ Step 3: Edge detection done")
+plt.figure(figsize=(10,4))
+plt.subplot(1,2,1); plt.imshow(orig_edges, cmap="gray"); plt.title("Original Edges"); plt.axis("off")
+plt.subplot(1,2,2); plt.imshow(tamp_edges, cmap="gray"); plt.title("Tampered Edges"); plt.axis("off")
+plt.show()
+
+# ================= Step 4: Localization & Post-Processing =================
+if orig_edges.shape != tamp_edges.shape:
+    tamp_edges = cv2.resize(tamp_edges, (orig_edges.shape[1], orig_edges.shape[0]))
+
+diff_mask = cv2.absdiff(orig_edges, tamp_edges)
+_, diff_mask = cv2.threshold(diff_mask, 30, 255, cv2.THRESH_BINARY)
+kernel = np.ones((3,3), np.uint8)
+diff_mask = cv2.morphologyEx(diff_mask, cv2.MORPH_OPEN, kernel)
+diff_mask = cv2.dilate(diff_mask, kernel, iterations=1)
+
+print("✅ Step 4: Localization done")
+plt.imshow(diff_mask, cmap="gray")
+plt.title("Localized Tampered Regions")
+plt.axis("off")
+plt.show()
+
+# ================= Step 5: Comparison =================
+def compare_images(img1, img2):
+    if img1.shape != img2.shape:
+        img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
+    diff = cv2.absdiff(img1, img2)
+    gray_diff = cv2.cvtColor(diff, cv2.COLOR_RGB2GRAY)
+    _, thresh = cv2.threshold(gray_diff, 50, 255, cv2.THRESH_BINARY)
+    return thresh
+tamper_diff = compare_images(original_img, tampered_img)
+print("✅ Step 5: Comparison done")
+plt.imshow(tamper_diff, cmap="gray")
+plt.title("Difference Mask")
+plt.axis("off")
+plt.show()
+
+# ================= Step 6: Final Output (Circle around Tampered Object) =================
+def highlight_tampered_object(img, diff_mask):
+    contours, _ = cv2.findContours(diff_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    output = img.copy()
+    for cnt in contours:
+        if cv2.contourArea(cnt) > 100:
+            (cx, cy), radius = cv2.minEnclosingCircle(cnt)
+            cv2.circle(output, (int(cx), int(cy)), int(radius), (255, 0, 0), 3)
+    return output
+final_output = highlight_tampered_object(tampered_img, tamper_diff)
+print("✅ Step 6: Tampered object highlighted")
+plt.imshow(final_output)
+plt.title("Tampered Object Highlighted")
+plt.axis("off")
+plt.show()
